@@ -43,6 +43,13 @@ export class System_Of_Equations{
         this.vars_obj.clearValue(index);
 		this.vars_obj.updateScope();
     }
+	clearNonImplicit(){
+        for(let i =0;i<this.vars_obj.variables.length;i++){
+            if(!this.vars_obj.variables[i].implicit){
+				this.clearVarAtIndex(i);
+            }
+        }
+    }
 	considerVarDiscontinuation(var_name,excludeIndex = -1){
 		let found = false;
 		for (let i =0;i<this.eqs.length;i++){
@@ -64,6 +71,7 @@ export class System_Of_Equations{
 				}
 			}
 			this.vars_obj.deleteAtIndex(delIndex);
+			this.calced = false;
 		}
 	}
     //equations
@@ -94,7 +102,8 @@ export class System_Of_Equations{
 					this.vars_obj.add(eqVars[i])
 				}
 			}
-			this.calced = false;            
+			this.calced = false;       
+			this.clearNonImplicit();   
         }
 		for(let i =0;i<oldVars.length;i++){
 			if(!this.eqs[index].varNames.includes(oldVars[i])){
