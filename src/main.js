@@ -23,4 +23,7 @@ TODO log:
 
 	As ek methods het vir elke soort aksie wat ek net hoef te call dan gaan die app self easy wees en die equations gaan op hulle eie uitgesorteer kan word.
 
+9/13:
+
+	Johann is 20. Ek het nie meer 'n dom tiener wat my help code nie. Ek het 'n dom 20 jarige.
 */

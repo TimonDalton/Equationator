@@ -19,7 +19,7 @@
     "svelte": "^3.0.0"
   },
   "dependencies": {
-    "nerdamer": "^1.1.12",
+    "nerdamer": "^1.1.13",
     "sirv-cli": "^1.0.0"
   }
 }

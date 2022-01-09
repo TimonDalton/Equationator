@@ -112,6 +112,7 @@ export class System_Of_Equations{
 		}
     }
 	setValBySolving(index,val){
+		print("this is val in setValbysolving: " + val);
 		this.vars_obj.variables[index].val = val;
 		this.vars_obj.variables[index].isKnown = true;
 		this.vars_obj.variables[index].valueAsExpression = this.vars_obj.variables[index].val;		
@@ -132,6 +133,7 @@ export class System_Of_Equations{
 		
 		console.log("pressed solve");
 		for(let i =0;i<this.vars_obj.varNames.length;i++){
+			console.log("for loop ends @ <"+this.vars_obj.varNames.length);
 			console.log("looking at "+this.vars_obj.varNames[i]+" to solve");
 			console.log("Known status of "+this.vars_obj.varNames[i]+" "+this.vars_obj.variables[i].isKnown);
 			if(!this.vars_obj.variables[i].isKnown){
@@ -239,8 +241,8 @@ export class System_Of_Equations{
 		let simEqIndexes = indexesToSimultaneouslySolvePerVariable;
 		let eqVars = Object.keys(indexesToSimultaneouslySolvePerVariable);
 		console.log("Eq Vars to simultaneously solve: ");
-		console.log(eqVars);
-		console.log(simEqIndexes[eqVars[0]]);
+		console.log("equation Vars: "+eqVars);
+		console.log("simEqIndexes[eqVars[0]]: "+simEqIndexes[eqVars[0]]);
 		for(;eqVars.length>0;){
 			let simEqStrings = [];
 			for(let nthIndex = 0;nthIndex<simEqIndexes[eqVars[0]].length;nthIndex++){
