@@ -22045,6 +22045,8 @@ var app = (function () {
     		this.vars_obj.variables[index].isKnown = true;
     		this.vars_obj.variables[index].valueAsExpression = this.vars_obj.variables[index].val;		
     		this.vars_obj.variables[index].valueStr = this.vars_obj.variables[index].val;
+
+    		this.vars_obj.updateScope();
     	}	
 
         //system
@@ -22082,7 +22084,7 @@ var app = (function () {
     									console.log("solving for "+this.vars_obj.varNames[i]+" in "+this.eqs[eqIndex].eqStr +" with the result: ");
     									value = nerdamer_core.solveEquations(this.eqs[eqIndex].eqStr,this.vars_obj.varNames[i]);
     									console.log(value);
-    									if(Array.isArray(value)){
+    									if(function(){if(Array.isArray(value)){if(value.length == 1){value = value[0];console.log("jank");return false;}else return true;} else {return false;}}){
     										console.log("val first index: ");
     										console.log(value[0]);
     										console.log("1");
@@ -22090,12 +22092,13 @@ var app = (function () {
     											console.log("1.1");
     											this.eqs[eqIndex].statusIndex = 5;
     											this.setValBySolving(i,nerdamer_core(value[0]).evaluate(scope));
+    											scope = this.vars_obj.scope;
     											
     											console.log("Assigning "+this.vars_obj.varNames[i]+" to "+this.vars_obj.variables[i].val);
     											console.log("Scope = ");
     											console.log(scope);
-    											i=0;		
     											console.log("Set "+this.vars_obj.varNames[i]+" to known");
+    											i=-1;console.log("-----------------");		
     											break;
     										}else {
     											console.log("1.2");		
@@ -22109,8 +22112,9 @@ var app = (function () {
     											console.log("2.1");
     											this.eqs[eqIndex].statusIndex = 5;
     											this.setValBySolving(i,nerdamer_core(value[0]).evaluate(scope)); 
+    											scope = this.vars_obj.scope;
     											console.log("Set "+this.vars_obj.varNames[i]+" to known");
-    											i=0;								
+    											i=-1;console.log("-----------------");								
     											break;
     										}else {
     											console.log("2.2");
@@ -22131,9 +22135,10 @@ var app = (function () {
     											console.log("1.1");			
     											this.eqs[eqIndex].statusIndex = 5;
     											this.setValBySolving(i,nerdamer_core(value[0]).evaluate(scope));
-    											i=0;				
+    											scope = this.vars_obj.scope;
     											indexesToSimultaneouslySolvePerVariable[this.vars_obj.varNames[i]] = [];
-    											console.log("Set "+this.vars_obj.varNames[i]+" to known");
+    											console.log("Set "+this.vars_obj.varNames[i]+" to known as"+ value[0]);
+    											i=-1;console.log("-----------------");				
     											break;
     										}else {		
     											console.log("1.2");			
@@ -22145,9 +22150,10 @@ var app = (function () {
     											console.log("2.1");
     											this.eqs[eqIndex].statusIndex = 5;
     											this.setValBySolving(i,nerdamer_core(value[0]).evaluate(scope));					
-    											i=0;		
+    											scope = this.vars_obj.scope;
     											indexesToSimultaneouslySolvePerVariable[this.vars_obj.varNames[i]] = [];	
     											console.log("Set "+this.vars_obj.varNames[i]+" to known");
+    											i=-1;console.log("-----------------");		
     											break;
     										}else {
     											console.log("2.2");
@@ -22186,6 +22192,7 @@ var app = (function () {
     				console.log(res);
     				for(let i =0;i<vNames.length;i++){
     					this.setValBySolving(this.vars_obj.getVarIndex(vNames[i]),res[vNames[i]]);
+    					scope = this.vars_obj.scope;
     				}
     				nerdamer_core.set('SOLUTIONS_AS_OBJECT', false);
     				for(let i = 0;i<eqVars.length;i++){
