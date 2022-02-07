@@ -112,19 +112,66 @@ export class System_Of_Equations{
 		}
     }
 	setValBySolving(index,val){
-		print("this is val in setValbysolving: " + val);
 		this.vars_obj.variables[index].val = val;
 		this.vars_obj.variables[index].isKnown = true;
 		this.vars_obj.variables[index].valueAsExpression = this.vars_obj.variables[index].val;		
 		this.vars_obj.variables[index].valueStr = this.vars_obj.variables[index].val;
-
-		this.vars_obj.updateScope();
 	}	
 
-    //system
+   //new stuff
+	getSimilarEquations(n,eqID){
+		console.log("getting similareq!!!!");
+		let testVars = eqs[eqID].varNames.length; //replaced .unknowns
+		let ret = [];
+		for (let i =0;i<eqs.length;i++){
+			if (i != eqID){
+				if(this.eqs[i].unknowns.length <= n){
+					let sharedVarCount = this.eqs[i].unknowns.getUnknownsInList(testVars).length;
+					let entry = {'count': sharedVarCount,'eqID':i};
+					ret.append(entry);
+				}
+			}
+		}
+		for (let i =0;i<ret.length-1;i++){
+			let swapped = false;
+			for (let j = i+1;j<ret.length;j++){
+				if(ret[j-1].count<ret[j].count){
+					swapped = true;
+					let temp = ret[j-1];
+					ret[j-1] = ret[j];
+					ret[j] = temp;
+				}
+			}
+			if (!swapped)break;			
+		}
+		return ret;
+	}
+	
+	trySimEqSolution(eqArr){
+		//insert equations and return answer or err
+		if (eqArr.length ==1)
+			try{
+				var ans = nerdamer.solveEquations(eqArr);
+				
+				if(Array.isArray(ans)){return ans;}
+				if(!ans.isNumber()){throw 'ans not number';}
+				return ans;
+			}catch(err){
+				return err;
+			}
+		else{
+			try{
+				var ans = nerdamer.solveEquations(eqArr);
+				return ans;
+			}catch(err){
+				return err;
+			}
+		}
+	}
 
+	 //system
     solveAndUpdate(){
-        
+        console.log("Entered solveAndUpdate");
 		if(this.calced){
 			console.log('already solved, make change first');
 			return;
@@ -134,8 +181,46 @@ export class System_Of_Equations{
 		let scope = this.vars_obj.scope;
 		
 		console.log("pressed solve");
+
+		let unknowns = this.vars_obj.getUnknownVarNames();
+		for (let n = 1;n<=unknowns.length;n++){
+			console.log("fLoop 1: n=" + n + ", unknowns.length=" + unknowns.length);
+			//try equations
+			for(let eqID=0;eqID<this.eqs.length;eqID++){
+				console.log("fLoop 2: eqID=" + eqID + ", eqs.length=" + this.eqs.length);
+
+				if(this.eqs[eqID].varNames.length <= n){
+					//replaced .unknowns inside if statement
+					console.log("if: n="+n+" eqID="+eqID);
+					
+					let simEqs = getSimilarEquations(n,eqID);//[{count,eqID}]
+					let activeSimEqs = [];
+					activeSimEqs[0] = this.eqs[eqID].eqStr;
+					for(let i=0;i<=simEqs.length;i++){
+						activeSimEqs.append(this.eqs[simEqs[i].eqID].eqStr);
+						//timon approves
+
+						try{
+							ans = trySimEqSolution(activeSimEqs);
+							n=0;
+							unknowns = this.vars_obj.getUnknownVars();
+							break;
+						}catch(err){
+
+						}
+					}
+
+				}
+			}
+		}
+    }
+}
+
+
+
+
+/*
 		for(let i =0;i<this.vars_obj.varNames.length;i++){
-			console.log("for loop ends @ <"+this.vars_obj.varNames.length);
 			console.log("looking at "+this.vars_obj.varNames[i]+" to solve");
 			console.log("Known status of "+this.vars_obj.varNames[i]+" "+this.vars_obj.variables[i].isKnown);
 			if(!this.vars_obj.variables[i].isKnown){
@@ -156,7 +241,7 @@ export class System_Of_Equations{
 									console.log("solving for "+this.vars_obj.varNames[i]+" in "+this.eqs[eqIndex].eqStr +" with the result: ");
 									value = nerdamer.solveEquations(this.eqs[eqIndex].eqStr,this.vars_obj.varNames[i]);
 									console.log(value);
-									if(function(){if(Array.isArray(value)){if(value.length == 1){value = value[0];console.log("jank");return false;}else return true;} else {return false;}}){
+									if(Array.isArray(value)){
 										console.log("val first index: ");
 										console.log(value[0]);
 										console.log("1");
@@ -164,13 +249,12 @@ export class System_Of_Equations{
 											console.log("1.1");
 											this.eqs[eqIndex].statusIndex = 5;
 											this.setValBySolving(i,nerdamer(value[0]).evaluate(scope));
-											scope = this.vars_obj.scope;
 											
 											console.log("Assigning "+this.vars_obj.varNames[i]+" to "+this.vars_obj.variables[i].val);
 											console.log("Scope = ");
 											console.log(scope);
+											i=0;		
 											console.log("Set "+this.vars_obj.varNames[i]+" to known");
-											i=-1;console.log("-----------------");		
 											break;
 										}else{
 											console.log("1.2");		
@@ -184,9 +268,8 @@ export class System_Of_Equations{
 											console.log("2.1");
 											this.eqs[eqIndex].statusIndex = 5;
 											this.setValBySolving(i,nerdamer(value[0]).evaluate(scope)); 
-											scope = this.vars_obj.scope;
 											console.log("Set "+this.vars_obj.varNames[i]+" to known");
-											i=-1;console.log("-----------------");								
+											i=0;								
 											break;
 										}else{
 											console.log("2.2");
@@ -207,10 +290,9 @@ export class System_Of_Equations{
 											console.log("1.1");			
 											this.eqs[eqIndex].statusIndex = 5;
 											this.setValBySolving(i,nerdamer(value[0]).evaluate(scope));
-											scope = this.vars_obj.scope;
+											i=0;				
 											indexesToSimultaneouslySolvePerVariable[this.vars_obj.varNames[i]] = [];
-											console.log("Set "+this.vars_obj.varNames[i]+" to known as"+ value[0]);
-											i=-1;console.log("-----------------");				
+											console.log("Set "+this.vars_obj.varNames[i]+" to known");
 											break;
 										}else{		
 											console.log("1.2");			
@@ -222,10 +304,9 @@ export class System_Of_Equations{
 											console.log("2.1");
 											this.eqs[eqIndex].statusIndex = 5;
 											this.setValBySolving(i,nerdamer(value[0]).evaluate(scope));					
-											scope = this.vars_obj.scope;
+											i=0;		
 											indexesToSimultaneouslySolvePerVariable[this.vars_obj.varNames[i]] = [];	
 											console.log("Set "+this.vars_obj.varNames[i]+" to known");
-											i=-1;console.log("-----------------");		
 											break;
 										}else{
 											console.log("2.2");
@@ -247,8 +328,8 @@ export class System_Of_Equations{
 		let simEqIndexes = indexesToSimultaneouslySolvePerVariable;
 		let eqVars = Object.keys(indexesToSimultaneouslySolvePerVariable);
 		console.log("Eq Vars to simultaneously solve: ");
-		console.log("equation Vars: "+eqVars);
-		console.log("simEqIndexes[eqVars[0]]: "+simEqIndexes[eqVars[0]]);
+		console.log(eqVars);
+		console.log(simEqIndexes[eqVars[0]]);
 		for(;eqVars.length>0;){
 			let simEqStrings = [];
 			for(let nthIndex = 0;nthIndex<simEqIndexes[eqVars[0]].length;nthIndex++){
@@ -264,7 +345,6 @@ export class System_Of_Equations{
 				console.log(res);
 				for(let i =0;i<vNames.length;i++){
 					this.setValBySolving(this.vars_obj.getVarIndex(vNames[i]),res[vNames[i]]);
-					scope = this.vars_obj.scope;
 				}
 				nerdamer.set('SOLUTIONS_AS_OBJECT', false);
 				for(let i = 0;i<eqVars.length;i++){
@@ -282,7 +362,8 @@ export class System_Of_Equations{
 		console.log(indexesToSimultaneouslySolvePerVariable);
 
 		//do simultaneously solve
-    }
-}
+		*/
+
+
 
 console.log("loaded systemOfEquationsClass");
