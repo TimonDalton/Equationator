@@ -1,4 +1,5 @@
 import nerdamer from "nerdamer";
+import { append } from "svelte/internal";
 
 export class Var {
     constructor(name, val = null, implicit = false, isKnown = false) {
@@ -70,6 +71,26 @@ export class Var_obj {
 
     getVarIndex(vName){
         return this.varNames.indexOf(vName);
+    }
+
+    getUnknownVarNames(){
+        let ret = [];
+        let count = 0;
+        for (let i =0;i<this.varNames.length;i++){
+            if(!this.vars[i].isKnown){
+                ret[count++] = this.varNames[i];
+            }
+        }
+        return ret;
+    }
+    getUnknownIndexes(){
+        let ret = [];
+        for (let i = 0;i<this.varNames.length;i++){
+            if(!this.vars[i].isKnown){
+                ret.append(i);
+            }
+        }
+        return ret;
     }
 
 

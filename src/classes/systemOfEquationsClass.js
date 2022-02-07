@@ -119,7 +119,53 @@ export class System_Of_Equations{
 	}	
 
     //system
-
+	getSimilarEquations(n,eqID){
+		let testVars = this.eqs[eqID].unknowns;
+		let ret = [];
+		for (let i =0;i<eqs.length;i++){
+			if (i != eqID){
+				if(this.eqs[i].unknowns.length <= n){
+					let sharedVarCount = this.eqs[i].unknowns.getUnknownsInList(testVars).length;
+					let entry = {'count': sharedVarCount,'eqID':i};
+					ret.append(entry);
+				}
+			}
+		}
+		for (let i =0;i<ret.length-1;i++){
+			let swapped = false;
+			for (let j = i+1;j<ret.length;j++){
+				if(ret[j-1].count<ret[j].count){
+					swapped = true;
+					let temp = ret[j-1];
+					ret[j-1] = ret[j];
+					ret[j] = temp;
+				}
+			}
+			if (!swapped)break;			
+		}
+		return ret;
+	}
+	trySimEqSolution(eqArr){
+        //insert equations and return answer or err
+        if (eqArr.length ==1)
+            try{
+                var ans = nerdamer.solveEquations(eqArr);
+                
+                if(Array.isArray(ans)){return ans;}
+                if(!ans.isNumber()){throw 'ans not number';}
+                return ans;
+            }catch(err){
+                return err;
+            }
+        else{
+            try{
+                var ans = nerdamer.solveEquations(eqArr);
+                return ans;
+            }catch(err){
+                return err;
+            }
+        }
+    }
     solveAndUpdate(){
         
 		if(this.calced){
@@ -131,6 +177,35 @@ export class System_Of_Equations{
 		let scope = this.vars_obj.scope;
 		
 		console.log("pressed solve");
+
+		let unknowns = this.vars_obj.getUnknownVarNames();
+		for (let n = 1;n<unknowns.length;n++){
+			//try equations
+			for(let eqID=0;eqID<this.eqs.length;eqID++){
+				if(eqs[eqID].unknowns <= n){
+					let simEqs = getSimilarEquations(n,eqID);//[{count,eqID}]
+					let activeSimEqs = [];
+					activeSimEqs[0] = eqs[eqID].eqStr;
+					for(let i=0;i<=simEqs.length;i++){
+						activeSimEqs.append(eqs[simEqs[i].eqID].eqStr);
+						//timon approve
+
+						try{
+							ans = trySimEqSolution(activeSimEqs);
+							n=0;
+							unknowns = this.vars_obj.getUnknownVars();
+							break;
+						}catch(err){
+
+						}
+					}
+
+				}
+			}
+		}
+
+
+		/*
 		for(let i =0;i<this.vars_obj.varNames.length;i++){
 			console.log("looking at "+this.vars_obj.varNames[i]+" to solve");
 			console.log("Known status of "+this.vars_obj.varNames[i]+" "+this.vars_obj.variables[i].isKnown);
@@ -273,6 +348,7 @@ export class System_Of_Equations{
 		console.log(indexesToSimultaneouslySolvePerVariable);
 
 		//do simultaneously solve
+		*/
     }
 }
 

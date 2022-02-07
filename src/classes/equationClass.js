@@ -11,6 +11,7 @@ export class Equation{
         this.varNames = varNames;
         this.ndPtr = ndPtr;
         this.statusIndex = statusIndex;
+        this.unknowns = -1;
     }
     
     setNewEquationStr(eqStr = this.eqStr){
@@ -20,6 +21,25 @@ export class Equation{
         if(this.isValid){this.statusIndex = 2;}
         else this.statusIndex = getStatusIndexFromString(eqStr);
     }
+    updateUnknowns(unknowns){
+        ret = []
+        this.unknowns = 0;
+        for (let i =0;i<this.varNames;i++){
+            if (unknowns.includes(this.varNames[i]))
+                ret.add(this.varNames[i]);
+                this.unknowns ++;
+        }
+        return ret;
+    }
+    getUnknownsInList(list){
+        ret = []
+        for (let i =0;i<this.varNames;i++){
+            if (list.includes(this.varNames[i]))
+                ret.add(this.varNames[i]);
+        }
+        return ret;
+    }
+    
 }
 
 export function eqStringValid(inputString){

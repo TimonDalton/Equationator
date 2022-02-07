@@ -79,7 +79,12 @@ var app = (function () {
         input.value = value == null ? '' : value;
     }
     function set_style(node, key, value, important) {
-        node.style.setProperty(key, value, important ? 'important' : '');
+        if (value === null) {
+            node.style.removeProperty(key);
+        }
+        else {
+            node.style.setProperty(key, value, important ? 'important' : '');
+        }
     }
     function custom_event(type, detail, bubbles = false) {
         const e = document.createEvent('CustomEvent');
@@ -107,22 +112,40 @@ var app = (function () {
     function add_render_callback(fn) {
         render_callbacks.push(fn);
     }
-    let flushing = false;
+    // flush() calls callbacks in this order:
+    // 1. All beforeUpdate callbacks, in order: parents before children
+    // 2. All bind:this callbacks, in reverse order: children before parents.
+    // 3. All afterUpdate callbacks, in order: parents before children. EXCEPT
+    //    for afterUpdates called during the initial onMount, which are called in
+    //    reverse order: children before parents.
+    // Since callbacks might update component values, which could trigger another
+    // call to flush(), the following steps guard against this:
+    // 1. During beforeUpdate, any updated components will be added to the
+    //    dirty_components array and will cause a reentrant call to flush(). Because
+    //    the flush index is kept outside the function, the reentrant call will pick
+    //    up where the earlier call left off and go through all dirty components. The
+    //    current_component value is saved and restored so that the reentrant call will
+    //    not interfere with the "parent" flush() call.
+    // 2. bind:this callbacks cannot trigger new flush() calls.
+    // 3. During afterUpdate, any updated components will NOT have their afterUpdate
+    //    callback called a second time; the seen_callbacks set, outside the flush()
+    //    function, guarantees this behavior.
     const seen_callbacks = new Set();
+    let flushidx = 0; // Do *not* move this inside the flush() function
     function flush() {
-        if (flushing)
-            return;
-        flushing = true;
+        const saved_component = current_component;
         do {
             // first, call beforeUpdate functions
             // and update components
-            for (let i = 0; i < dirty_components.length; i += 1) {
-                const component = dirty_components[i];
+            while (flushidx < dirty_components.length) {
+                const component = dirty_components[flushidx];
+                flushidx++;
                 set_current_component(component);
                 update(component.$$);
             }
             set_current_component(null);
             dirty_components.length = 0;
+            flushidx = 0;
             while (binding_callbacks.length)
                 binding_callbacks.pop()();
             // then, once components are updated, call
@@ -142,8 +165,8 @@ var app = (function () {
             flush_callbacks.pop()();
         }
         update_scheduled = false;
-        flushing = false;
         seen_callbacks.clear();
+        set_current_component(saved_component);
     }
     function update($$) {
         if ($$.fragment !== null) {
@@ -224,7 +247,7 @@ var app = (function () {
             on_disconnect: [],
             before_update: [],
             after_update: [],
-            context: new Map(parent_component ? parent_component.$$.context : options.context || []),
+            context: new Map(options.context || (parent_component ? parent_component.$$.context : [])),
             // everything else
             callbacks: blank_object(),
             dirty,
@@ -295,7 +318,7 @@ var app = (function () {
     }
 
     function dispatch_dev(type, detail) {
-        document.dispatchEvent(custom_event(type, Object.assign({ version: '3.42.2' }, detail), true));
+        document.dispatchEvent(custom_event(type, Object.assign({ version: '3.46.3' }, detail), true));
     }
     function append_dev(target, node) {
         dispatch_dev('SvelteDOMInsert', { target, node });
@@ -397,7 +420,7 @@ var app = (function () {
     var nerdamer = (function (imports) {
 
     //version ======================================================================
-        var version = '1.1.12';
+        var version = '1.1.13';
 
     //inits ========================================================================
         var _ = new Parser(); //nerdamer's parser
@@ -473,8 +496,12 @@ var app = (function () {
             CACHE: {},
             //Print out warnings or not
             SILENCE_WARNINGS: false,
-            //Precision
+            // Precision
             PRECISION: 21,
+            // The Expression defaults to this value for decimal places
+            EXPRESSION_DECP: 19,
+            // The text function defaults to this value for decimal places
+            DEFAULT_DECP: 16,
             //function mappings
             VECTOR: 'vector',
             PARENTHESIS: 'parens',
@@ -2603,7 +2630,7 @@ var app = (function () {
          * @param {int} useGroup
          * @returns {String}
          */
-        function text(obj, option, useGroup, decp) {
+        function text(obj, option, useGroup, decp) { 
             var asHash = option === 'hash',
                     //whether to wrap numbers in brackets
                     wrapCondition = undefined,
@@ -2611,7 +2638,7 @@ var app = (function () {
                     asDecimal = opt === 'decimal' || opt === 'decimals';
 
             if(asDecimal && typeof decp === 'undefined')
-                decp = 16;
+                decp = Settings.DEFAULT_DECP;
 
             function toString(obj) {
                 switch(option)
@@ -2956,7 +2983,7 @@ var app = (function () {
              * @returns {String}
              */
             text: function (opt, n) {
-                n = n || 19;
+                n = n || Settings.EXPRESSION_DECP;
                 opt = opt || 'decimals';
                 if(this.symbol.text_)
                     return this.symbol.text_(opt);
@@ -3169,135 +3196,7 @@ var app = (function () {
         //Aliases
         Expression.prototype.toTeX = Expression.prototype.latex;
 
-    //Scientific ===================================================================
-        function Scientific(num) {
-            if(!(this instanceof Scientific))
-                return new Scientific(num);
-
-            num = String(typeof num === 'undefined' ? 0 : num); //convert to a string
-
-            //remove the sign
-            if(num.startsWith('-')) {
-                this.sign = -1;
-                //remove the sign
-                num = num.substr(1, num.length);
-            }
-            else {
-                this.sign = 1;
-            }
-
-            if(Scientific.isScientific(num)) {
-                this.fromScientific(num);
-            }
-            else {
-                this.convert(num);
-            }
-            return this;
-        }
-
-        Scientific.prototype = {
-            fromScientific: function (num) {
-                var parts = String(num).toLowerCase().split('e');
-                this.coeff = parts[0];
-                this.exponent = parts[1];
-
-                return this;
-            },
-            convert: function (num) {
-                //get wholes and decimals
-                var parts = num.split('.');
-                //make zero go away
-                var w = parts[0] || '';
-                var d = parts[1] || '';
-                //convert zero to blank strings
-                w = Scientific.removeLeadingZeroes(w);
-                d = Scientific.removeTrailingZeroes(d);
-                //find the location of the decimal place which is right after the wholes
-                var dot_location = w.length;
-                //add them together so we can move the dot
-                var n = w + d;
-                //find the next number
-                var zeroes = Scientific.leadingZeroes(n).length;
-                //set the exponent
-                this.exponent = dot_location - (zeroes + 1);
-                //set the coeff but first remove leading zeroes
-                var coeff = Scientific.removeLeadingZeroes(n);
-                this.coeff = coeff.charAt(0) + '.' + (coeff.substr(1, coeff.length) || '0');
-
-                return this;
-            },
-            round: function (num) {
-                var n = this.copy();
-
-                num = Number(num); //cast to number for safety
-                //since we know it guaranteed to be in the format {digit}{optional dot}{optional digits}
-                //we can round based on this
-                if(num === 0)
-                    n.coeff = n.coeff.charAt(0);
-                else {
-                    //get up to n-1 digits
-                    var rounded = this.coeff.substring(0, num + 1);
-                    //get the next two
-                    var next_two = this.coeff.substring(num + 1, num + 3);
-                    //the extra digit
-                    var ed = next_two.charAt(0);
-
-                    if(next_two.charAt(1) > 4)
-                        ed++;
-
-                    n.coeff = rounded + ed;
-                }
-
-                return n;
-            },
-            copy: function () {
-                var n = new Scientific(0);
-                n.coeff = this.coeff;
-                n.exponent = this.exponent;
-                n.sign = this.sign;
-                return n;
-            },
-            toString: function (n) {
-                var coeff = typeof n === 'undefined' ? this.coeff : Scientific.round(this.coeff, n);
-
-                var c;
-                if(this.exponent === 0 && Settings.SCIENTIFIC_IGNORE_INTS) {
-                    c = this.coeff;
-                }
-                else {
-                    c = coeff + 'e' + this.exponent;
-                }
-                return (this.sign === -1 ? '-' : '') + c;
-            }
-        };
-
-        Scientific.isScientific = function (num) {
-            return /\d+\.?\d*e[\+\-]*\d+/i.test(num);
-        };
-        Scientific.leadingZeroes = function (num) {
-            var match = num.match(/^(0*).*$/);
-            return match ? match[1] : '';
-        };
-        Scientific.removeLeadingZeroes = function (num) {
-            var match = num.match(/^0*(.*)$/);
-            return match ? match[1] : '';
-        };
-
-        Scientific.removeTrailingZeroes = function (num) {
-            var match = num.match(/0*$/);
-            return match ? num.substring(0, num.length - match[0].length) : '';
-        };
-        Scientific.round = function (c, n) {
-            var coeff = nround(c, n);
-            var m = String(coeff).split('.').pop();
-            var d = n - m.length;
-            //if we're asking for more significant figures
-            if(d > 0) {
-                coeff = coeff + (new Array(d + 1).join(0));
-            }
-            return coeff;
-        };
-
+        
     //Scientific ===================================================================
         /*
          * Javascript has the toExponential method but this allows you to work with string and therefore any number of digits of your choosing
@@ -3435,6 +3334,16 @@ var app = (function () {
             return match ? num.substring(0, num.length - match[0].length) : '';
         };
 
+        Scientific.round = function (c, n) {
+            var coeff = nround(c, n);
+            var m = String(coeff).split('.').pop();
+            var d = n - m.length;
+            //if we're asking for more significant figures
+            if(d > 0) {
+                coeff = coeff + (new Array(d + 1).join(0));
+            }
+            return coeff;
+        };
 
     //Frac =========================================================================
         function Frac(n) {
@@ -3598,13 +3507,14 @@ var app = (function () {
                 var dec = whole.toString() + '.' + narr.join('');
                 return sign + dec;
             },
-            toDecimal: function (prec) {
+            toDecimal: function (prec) { 
                 prec = prec || Settings.PRECISION;
                 if(prec) {
                     return this.decimal(prec);
                 }
-                else
+                else {
                     return this.num / this.den;
+                }
             },
             qcompare: function (n) {
                 return [this.num.multiply(n.den), n.num.multiply(this.den)];
@@ -3684,7 +3594,8 @@ var app = (function () {
     //            if(this.num == 24) throw new Error(999)
                 if(Settings.USE_BIG)
                     return new bigDec(this.num.toString()).div(new bigDec(this.den.toString()));
-                return this.num / this.den;
+                var retval = this.num / this.den;
+                return retval;
             },
             isNegative: function () {
                 return this.toDecimal() < 0;
@@ -5057,7 +4968,7 @@ var app = (function () {
                     symbol = _.expand(symbol);
 
                 //if the symbol already is the denominator... DONE!!!
-                if(symbol.power.lessThan(0)) {
+                if(symbol.power.lessThan(0) || symbol.group === EX && symbol.power.multiplier.lessThan(0)) {
                     var d = _.parse(symbol.multiplier.den);
                     retval = symbol.toUnitMultiplier();
                     retval.power.negate();
@@ -5065,12 +4976,15 @@ var app = (function () {
                 }
                 else if(symbol.group === CB) {
                     retval = _.parse(symbol.multiplier.den);
-                    for(var x in symbol.symbols)
-                        if(symbol.symbols[x].power < 0)
+                    for(var x in symbol.symbols) {
+                        var s = symbol.symbols[x];
+                        if(s.power < 0 || s.group === EX && s.power.multiplier.lessThan(0))
                             retval = _.multiply(retval, symbol.symbols[x].clone().invert());
+                    }
                 }
-                else
+                else {
                     retval = _.parse(symbol.multiplier.den);
+                }
                 return retval;
             },
             getNum: function () {
@@ -5080,7 +4994,7 @@ var app = (function () {
                 if(symbol.group === CB && symbol.power.lessThan(0))
                     symbol = _.expand(symbol);
                 //if the symbol already is the denominator... DONE!!!
-                if(symbol.power.greaterThan(0) && symbol.group !== CB) {
+                if(symbol.power.greaterThan(0) && symbol.group !== CB || symbol.group === EX && symbol.power.multiplier.greaterThan(0)) {
                     retval = _.multiply(_.parse(symbol.multiplier.num), symbol.toUnitMultiplier());
                 }
                 else if(symbol.group === CB) {
@@ -5091,6 +5005,9 @@ var app = (function () {
                         }
                     });
                 }
+    //            else if(symbol.group === EX && this.previousGroup === S) {
+    //                retval = _.multiply(_.parse(symbol.multiplier.num), symbol.toUnitMultiplier());
+    //            }
                 else {
                     retval = _.parse(symbol.multiplier.num);
                 }
@@ -7570,12 +7487,15 @@ var app = (function () {
                         if(e.group === FN) {
                             var fname = e.fname, f;
 
-                            if(fname === SQRT)
+                            if(fname === SQRT) {
                                 f = '\\sqrt' + LaTeX.braces(this.toTeX(e.args));
-                            else if(fname === ABS)
+                            }
+                            else if(fname === ABS) {
                                 f = LaTeX.brackets(this.toTeX(e.args), 'abs');
-                            else if(fname === PARENTHESIS)
+                            }
+                            else if(fname === PARENTHESIS) {
                                 f = LaTeX.brackets(this.toTeX(e.args), 'parens');
+                            }
                             else if(fname === Settings.LOG10) {
                                 f = '\\' + Settings.LOG10_LATEX + '\\left( ' + this.toTeX(e.args) + '\\right)';
                             }
@@ -7644,10 +7564,10 @@ var app = (function () {
                                 });
                                 f = '\\lim_' + LaTeX.braces(args[1] + '\\to ' + args[2]) + ' ' + LaTeX.braces(args[0]);
                             }
-                            else if(fname === FACTORIAL || fname === DOUBLEFACTORIAL)
+                            else if(fname === FACTORIAL || fname === DOUBLEFACTORIAL) {
                                 f = this.toTeX(e.args) + (fname === FACTORIAL ? '!' : '!!');
+                            }
                             else {
-
                                 f = LaTeX.latex(e, decimals);
                                 //f = '\\mathrm'+LaTeX.braces(fname.replace(/_/g, '\\_')) + LaTeX.brackets(this.toTeX(e.args), 'parens');
                             }
@@ -12794,9 +12714,9 @@ var app = (function () {
 
         /**
          * This functions makes internal functions available externally
-         * @param {bool} override Override the functions when calling api if it exists
+         * @param {bool} override Override the functions when calling updateAPI if it exists
          */
-        libExports.api = function (override) {
+        libExports.updateAPI = function (override) {
             //Map internal functions to external ones
             var linker = function (fname) {
                 return function () {
@@ -12863,7 +12783,7 @@ var app = (function () {
             });
         };
 
-        libExports.api();
+        libExports.updateAPI();
 
         return libExports; //Done
     //imports ======================================================================
@@ -15275,6 +15195,7 @@ var app = (function () {
                     return symbol;
                 },
                 _factor: function (symbol, factors) {
+                    symbol.group;
                     //some items cannot be factored any further so return those right away
                     if(symbol.group === FN) {
                         var arg = symbol.args[0];
@@ -15456,11 +15377,20 @@ var app = (function () {
 
                             //last minute clean up
                             symbol = _.parse(symbol, core.Utils.getFunctionsSubs(map));
-
+                            
+                            var addPower = factors.length === 1;
+                            
                             factors.add(_.pow(symbol, _.parse(p)));
 
                             var retval = factors.toSymbol();
-
+                            
+                            // We may have only factored out the symbol itself so we end up with a factor of one 
+                            // where the power needs to be placed back
+                            // e.g. factor((2*y+p)^2). Here we end up having a factor of 1 remaining and a p of 2.
+                            if(addPower && symbol.equals(1) && retval.isLinear()) {
+                                retval = _.pow(retval, _.parse(p));
+                            }
+                            
                             return retval;
                         }
 
@@ -15791,11 +15721,17 @@ var app = (function () {
 
                                     var div = __.div(symbol, d.clone()),
                                             is_factor = div[1].equals(0);
-
+                                    
+                                    // Break infinite loop for factoring e^t*x-1
+                                    if((symbol.equals(div[0]) && div[1].equals(0))) {
+                                        break;
+                                    }
+                                    
                                     if(div[0].isConstant()) {
                                         factors.add(div[0]);
                                         break;
                                     }
+                                    
                                 }
                                 else
                                     is_factor = false;
@@ -17050,7 +16986,7 @@ var app = (function () {
                         var symbols = symbol.collectSymbols();
                         //assumption 1.
                         //since it's a composite, it has a length of at least 1
-                        var retval, a, b, d1, d2, n1, n2, x, y, c, den, num;
+                        var retval, a, b, d1, d2, n1, n2, s, x, y, c, den, num;
                         a = symbols.pop(); //grab the first symbol
                         //loop through each term and make denominator common
                         while(symbols.length) {
@@ -17062,11 +16998,11 @@ var app = (function () {
                             c = _.multiply(d1.clone(), d2.clone());
                             x = _.multiply(n1, d2);
                             y = _.multiply(n2, d1);
-                            a = _.divide(_.add(x, y), c);
+                            s = _.add(x, y);
+                            a = _.divide(s, c);
                         }
                         den = _.expand(a.getDenom());
                         num = _.expand(a.getNum());
-
                         //simplify imaginary
                         if(num.isImaginary() && den.isImaginary()) {
                             retval = __.Simplify.complexSimp(num, den);
@@ -17223,7 +17159,6 @@ var app = (function () {
                     symbol = sym_array.pop();
                     //remove gcd from denominator
                     symbol = __.Simplify.fracSimp(symbol);
-
                     //nothing more to do
                     if(symbol.isConstant() || symbol.group === core.groups.S) {
                         sym_array.push(symbol);
@@ -17427,7 +17362,7 @@ var app = (function () {
                 }
             }
         ]);
-        nerdamer.api();
+        nerdamer.updateAPI();
     })();
     });
 
@@ -18650,6 +18585,10 @@ var app = (function () {
                                         //This would be a case like 1/(sqrt(1-x^3) or 1/(1-(x+1)^2)
                                         __.integration.stop();
                                     }
+                                }
+                                else if(p === 1/2 && x.power.equals(2) && a.greaterThan(0)) {
+                                    // TODO: Revisit
+                                    __.integration.stop();
                                 }
                                 else {
                                     if(x.isLinear() && x.group !== PL)
@@ -20093,7 +20032,7 @@ var app = (function () {
             }
         ]);
         //link registered functions externally
-        nerdamer.api();
+        nerdamer.updateAPI();
 
     })();
     });
@@ -20199,7 +20138,7 @@ var app = (function () {
          * This is an equation that has a left hand side and a right hand side
          */
         function Equation(lhs, rhs) {
-            if(rhs.isConstant() && lhs.isConstant() && !lhs.equals(rhs) || lhs.equals(core.Settings.IMAGINARY) || rhs.equals(core.Settings.IMAGINARY))
+            if(rhs.isConstant() && lhs.isConstant() && !lhs.equals(rhs) || lhs.equals(core.Settings.IMAGINARY) && rhs.isConstant(true) || rhs.equals(core.Settings.IMAGINARY) && lhs.isConstant(true))
                 throw new core.exceptions.NerdamerValueError(lhs.toString() + ' does not equal ' + rhs.toString());
             this.LHS = lhs; //left hand side
             this.RHS = rhs; //right and side
@@ -20225,12 +20164,19 @@ var app = (function () {
                 }
                 var a = eqn.LHS;
                 var b = eqn.RHS;
+                
                 if(a.isConstant(true) && !b.isConstant(true)) {
                     // Swap them to avoid confusing parser and cause an infinite loop
                     [a, b] = [b, a];
                 }
                 var _t = _.subtract(a, b);
                 var retval = expand ? _.expand(_t) : _t;
+                
+                // Quick workaround for issue #636
+                // This basically borrows the removeDenom method from the Equation class. 
+                // TODO: Make this function a stand-alone function
+                retval = new Equation(retval, new Symbol(0)).removeDenom().LHS;
+                
                 return retval;
             },
             removeDenom: function () {
@@ -20698,7 +20644,43 @@ var app = (function () {
                     }
 
                     vars = core.Utils.arrayGetVariables(eqns);
+                    
+                    // If the system only has one variable then we solve for the first one and 
+                    // then test the remaining equations with that solution. If any of the remaining
+                    // equation fails then the system has no solution
+                    if(vars.length === 1) {
+                        var n = 0,
+                            sol, e;
+                        do {
+                            var e = eqns[n].clone();
+                            
+                            if(n > 0) {
+                                e = e.sub(vars[0], sol[0]);
+                            }
 
+                            sol = solve(e, vars[0]);
+                            // Skip the first one
+                            if(n === 0) 
+                                continue;
+                        }
+                        while(++n < eqns.length)
+                            
+                        // Format the output
+                        var solutions;
+                        if(Settings.SOLUTIONS_AS_OBJECT) {
+                            solutions = {};
+                            solutions[vars[0]] = sol;
+                        }
+                        else if(sol.length === 0) {
+                            solutions = sol; // No solutions
+                        }
+                        else {
+                            solutions = [vars[0], sol];
+                        }
+                            
+                        return solutions;
+                    }
+                    
                     // Deal with redundant equations as expressed in #562
                     // The fix is to remove all but the number of equations equal to the number
                     // of variables. We then solve those and then evaluate the remaining equations
@@ -20841,6 +20823,8 @@ var app = (function () {
              */
             quad: function (c, b, a) {
                 var discriminant = _.subtract(_.pow(b.clone(), Symbol(2)), _.multiply(_.multiply(a.clone(), c.clone()), Symbol(4)))/*b^2 - 4ac*/;
+                // Fix for #608
+                discriminant = _.expand(discriminant);
                 var det = _.pow(discriminant, Symbol(0.5));
                 var den = _.parse(_.multiply(new Symbol(2), a.clone()));
                 var retval = [
@@ -21449,6 +21433,7 @@ var app = (function () {
                 return symbol;
             };
 
+
             //separate the equation
             var separate = function (eq) {
                 var lhs = new Symbol(0),
@@ -21653,8 +21638,11 @@ var app = (function () {
                                     var separated = separate(eq);
                                     var lhs = separated[0],
                                             rhs = separated[1];
+                                    
                                     if(lhs.group === core.groups.EX) {
-                                        add_to_result(_.parse(core.Utils.format(core.Settings.LOG + '(({0})/({2}))/' + core.Settings.LOG + '({1})', rhs, lhs.value, lhs.multiplier)));
+                                        var log = core.Settings.LOG;
+                                        var expr_str = `${log}((${rhs})/(${lhs.multiplier}))/${log}(${lhs.value})/${lhs.power.multiplier}`;
+                                        add_to_result(_.parse(expr_str));
                                     }
                                     break;
                                 case 1:
@@ -21820,7 +21808,7 @@ var app = (function () {
                 }
             }
         ]);
-        nerdamer.api();
+        nerdamer.updateAPI();
     })();
     });
 
@@ -21896,37 +21884,28 @@ var app = (function () {
             return this.varNames.indexOf(vName);
         }
 
-
-
-    }
-
-    function isNumber(n, scope) {
-        if (!scope) return getVariables(n).length == 0;
-        let vars = getVariables(n);
-        let found = true;
-        console.log("vars");
-        console.log(vars);
-        console.log("scope");
-        console.log(scope);
-        console.log("scope keys");
-        console.log(Object.keys(scope));
-        for (let i =0;i< vars.length;i++) {
-            let v = vars[i];
-            console.log("v: "+v);
-            if (!Object.keys(scope).includes(v)) {
-                console.log(v + " not in");
-                console.log(scope);
-                found = false;
-                break;
-            } else {
-                if (!scope[v]) {
-                    console.log("scope["+v+"]("+scope[v]+")has no value");
-                    found = false;
+        getUnknownVarNames(){
+            let ret = [];
+            let count = 0;
+            for (let i =0;i<this.varNames.length;i++){
+                if(!this.vars[i].isKnown){
+                    ret[count++] = this.varNames[i];
                 }
             }
+            return ret;
+        }
+        getUnknownIndexes(){
+            let ret = [];
+            for (let i = 0;i<this.varNames.length;i++){
+                if(!this.vars[i].isKnown){
+                    ret.append(i);
+                }
+            }
+            return ret;
         }
 
-        return found;
+
+
     }
 
     function getVariables(e) {
@@ -21942,6 +21921,7 @@ var app = (function () {
             this.varNames = varNames;
             this.ndPtr = ndPtr;
             this.statusIndex = statusIndex;
+            this.unknowns = -1;
         }
         
         setNewEquationStr(eqStr = this.eqStr){
@@ -21951,6 +21931,25 @@ var app = (function () {
             if(this.isValid){this.statusIndex = 2;}
             else this.statusIndex = getStatusIndexFromString(eqStr);
         }
+        updateUnknowns(unknowns){
+            ret = [];
+            this.unknowns = 0;
+            for (let i =0;i<this.varNames;i++){
+                if (unknowns.includes(this.varNames[i]))
+                    ret.add(this.varNames[i]);
+                    this.unknowns ++;
+            }
+            return ret;
+        }
+        getUnknownsInList(list){
+            ret = [];
+            for (let i =0;i<this.varNames;i++){
+                if (list.includes(this.varNames[i]))
+                    ret.add(this.varNames[i]);
+            }
+            return ret;
+        }
+        
     }
 
     function eqStringValid(inputString){
@@ -22006,6 +22005,13 @@ var app = (function () {
             this.vars_obj.clearValue(index);
     		this.vars_obj.updateScope();
         }
+    	clearNonImplicit(){
+            for(let i =0;i<this.vars_obj.variables.length;i++){
+                if(!this.vars_obj.variables[i].implicit){
+    				this.clearVarAtIndex(i);
+                }
+            }
+        }
     	considerVarDiscontinuation(var_name,excludeIndex = -1){
     		let found = false;
     		for (let i =0;i<this.eqs.length;i++){
@@ -22027,6 +22033,7 @@ var app = (function () {
     				}
     			}
     			this.vars_obj.deleteAtIndex(delIndex);
+    			this.calced = false;
     		}
     	}
         //equations
@@ -22057,7 +22064,8 @@ var app = (function () {
     					this.vars_obj.add(eqVars[i]);
     				}
     			}
-    			this.calced = false;            
+    			this.calced = false;       
+    			this.clearNonImplicit();   
             }
     		for(let i =0;i<oldVars.length;i++){
     			if(!this.eqs[index].varNames.includes(oldVars[i])){
@@ -22073,18 +22081,92 @@ var app = (function () {
     	}	
 
         //system
-
+    	getSimilarEquations(n,eqID){
+    		let testVars = this.eqs[eqID].unknowns;
+    		let ret = [];
+    		for (let i =0;i<eqs.length;i++){
+    			if (i != eqID){
+    				if(this.eqs[i].unknowns.length <= n){
+    					let sharedVarCount = this.eqs[i].unknowns.getUnknownsInList(testVars).length;
+    					let entry = {'count': sharedVarCount,'eqID':i};
+    					ret.append(entry);
+    				}
+    			}
+    		}
+    		for (let i =0;i<ret.length-1;i++){
+    			let swapped = false;
+    			for (let j = i+1;j<ret.length;j++){
+    				if(ret[j-1].count<ret[j].count){
+    					swapped = true;
+    					let temp = ret[j-1];
+    					ret[j-1] = ret[j];
+    					ret[j] = temp;
+    				}
+    			}
+    			if (!swapped)break;			
+    		}
+    		return ret;
+    	}
+    	trySimEqSolution(eqArr){
+            //insert equations and return answer or err
+            if (eqArr.length ==1)
+                try{
+                    var ans = nerdamer_core.solveEquations(eqArr);
+                    
+                    if(Array.isArray(ans)){return ans;}
+                    if(!ans.isNumber()){throw 'ans not number';}
+                    return ans;
+                }catch(err){
+                    return err;
+                }
+            else {
+                try{
+                    var ans = nerdamer_core.solveEquations(eqArr);
+                    return ans;
+                }catch(err){
+                    return err;
+                }
+            }
+        }
         solveAndUpdate(){
             
     		if(this.calced){
     			console.log('already solved, make change first');
     			return;
     		}
-    		let indexesToSimultaneouslySolvePerVariable = {};//varname:[EquationsIndexesArr]
     		this.calced = false;
-    		let scope = this.vars_obj.scope;
+    		this.vars_obj.scope;
     		
     		console.log("pressed solve");
+
+    		let unknowns = this.vars_obj.getUnknownVarNames();
+    		for (let n = 1;n<unknowns.length;n++){
+    			//try equations
+    			for(let eqID=0;eqID<this.eqs.length;eqID++){
+    				if(eqs[eqID].unknowns <= n){
+    					let simEqs = getSimilarEquations(n,eqID);//[{count,eqID}]
+    					let activeSimEqs = [];
+    					activeSimEqs[0] = eqs[eqID].eqStr;
+    					for(let i=0;i<=simEqs.length;i++){
+    						activeSimEqs.append(eqs[simEqs[i].eqID].eqStr);
+    						//timon approve
+
+    						try{
+    							ans = trySimEqSolution(activeSimEqs);
+    							n=0;
+    							unknowns = this.vars_obj.getUnknownVars();
+    							break;
+    						}catch(err){
+
+    						}
+    					}
+
+    				}
+    			}
+    		}
+
+
+    		/*
     		for(let i =0;i<this.vars_obj.varNames.length;i++){
     			console.log("looking at "+this.vars_obj.varNames[i]+" to solve");
     			console.log("Known status of "+this.vars_obj.varNames[i]+" "+this.vars_obj.variables[i].isKnown);
@@ -22104,7 +22186,7 @@ var app = (function () {
     								try{
     									console.log("in found try");
     									console.log("solving for "+this.vars_obj.varNames[i]+" in "+this.eqs[eqIndex].eqStr +" with the result: ");
-    									value = nerdamer_core.solveEquations(this.eqs[eqIndex].eqStr,this.vars_obj.varNames[i]);
+    									value = nerdamer.solveEquations(this.eqs[eqIndex].eqStr,this.vars_obj.varNames[i]);
     									console.log(value);
     									if(Array.isArray(value)){
     										console.log("val first index: ");
@@ -22113,7 +22195,7 @@ var app = (function () {
     										if(isNumber(value[0],scope)){			
     											console.log("1.1");
     											this.eqs[eqIndex].statusIndex = 5;
-    											this.setValBySolving(i,nerdamer_core(value[0]).evaluate(scope));
+    											this.setValBySolving(i,nerdamer(value[0]).evaluate(scope));
     											
     											console.log("Assigning "+this.vars_obj.varNames[i]+" to "+this.vars_obj.variables[i].val);
     											console.log("Scope = ");
@@ -22121,22 +22203,22 @@ var app = (function () {
     											i=0;		
     											console.log("Set "+this.vars_obj.varNames[i]+" to known");
     											break;
-    										}else {
+    										}else{
     											console.log("1.2");		
     											console.log("The not number:");
     											console.log(value[0]);
     											indexesToSimultaneouslySolvePerVariable[this.vars_obj.varNames[i]] = [eqIndex];
     										}
-    									}else {
+    									}else{
     										console.log("2");
     										if(isNumber(value,scope)){
     											console.log("2.1");
     											this.eqs[eqIndex].statusIndex = 5;
-    											this.setValBySolving(i,nerdamer_core(value[0]).evaluate(scope)); 
+    											this.setValBySolving(i,nerdamer(value[0]).evaluate(scope)); 
     											console.log("Set "+this.vars_obj.varNames[i]+" to known");
     											i=0;								
     											break;
-    										}else {
+    										}else{
     											console.log("2.2");
     											indexesToSimultaneouslySolvePerVariable[this.vars_obj.varNames[i]] = [eqIndex];
     										}
@@ -22145,35 +22227,35 @@ var app = (function () {
     									throw e;
     								}
     								//gees se iets is nie lekker nie							
-    							}else {
+    							}else{
     								try{
     									console.log("in !found try");
-    									let value = nerdamer_core.solveEquations(this.eqs[eqIndex].eqStr,this.vars_obj.varNames[i]);
+    									let value = nerdamer.solveEquations(this.eqs[eqIndex].eqStr,this.vars_obj.varNames[i]);
     									if(Array.isArray(value)){
     										console.log("1");
     										if(isNumber(value[0],scope)){		
     											console.log("1.1");			
     											this.eqs[eqIndex].statusIndex = 5;
-    											this.setValBySolving(i,nerdamer_core(value[0]).evaluate(scope));
+    											this.setValBySolving(i,nerdamer(value[0]).evaluate(scope));
     											i=0;				
     											indexesToSimultaneouslySolvePerVariable[this.vars_obj.varNames[i]] = [];
     											console.log("Set "+this.vars_obj.varNames[i]+" to known");
     											break;
-    										}else {		
+    										}else{		
     											console.log("1.2");			
     											indexesToSimultaneouslySolvePerVariable[this.vars_obj.varNames[i]].push(eqIndex);
     										}
-    									}else {
+    									}else{
     										console.log("2");
     										if(isNumber(value,scope)){
     											console.log("2.1");
     											this.eqs[eqIndex].statusIndex = 5;
-    											this.setValBySolving(i,nerdamer_core(value[0]).evaluate(scope));					
+    											this.setValBySolving(i,nerdamer(value[0]).evaluate(scope));					
     											i=0;		
     											indexesToSimultaneouslySolvePerVariable[this.vars_obj.varNames[i]] = [];	
     											console.log("Set "+this.vars_obj.varNames[i]+" to known");
     											break;
-    										}else {
+    										}else{
     											console.log("2.2");
     											indexesToSimultaneouslySolvePerVariable[this.vars_obj.varNames[i]] = [eqIndex];
     										}
@@ -22203,15 +22285,15 @@ var app = (function () {
     			console.log("simEqStrings");
     			console.log(simEqStrings);
     			try{
-    				nerdamer_core.set('SOLUTIONS_AS_OBJECT', true);
-    				let res = nerdamer_core.solveEquations(simEqStrings);
+    				nerdamer.set('SOLUTIONS_AS_OBJECT', true);
+    				let res = nerdamer.solveEquations(simEqStrings);
     				let vNames = Object.keys(res);
     				console.log("res");
     				console.log(res);
     				for(let i =0;i<vNames.length;i++){
     					this.setValBySolving(this.vars_obj.getVarIndex(vNames[i]),res[vNames[i]]);
     				}
-    				nerdamer_core.set('SOLUTIONS_AS_OBJECT', false);
+    				nerdamer.set('SOLUTIONS_AS_OBJECT', false);
     				for(let i = 0;i<eqVars.length;i++){
     					if(vNames.includes(eqVars[i])){
     						eqVars.splice(i,1);
@@ -22227,12 +22309,13 @@ var app = (function () {
     		console.log(indexesToSimultaneouslySolvePerVariable);
 
     		//do simultaneously solve
+    		*/
         }
     }
 
     console.log("loaded systemOfEquationsClass");
 
-    /* src\App.svelte generated by Svelte v3.42.2 */
+    /* src\App.svelte generated by Svelte v3.46.3 */
 
     const { console: console_1 } = globals;
     const file = "src\\App.svelte";
@@ -22793,9 +22876,12 @@ var app = (function () {
 
     	As ek methods het vir elke soort aksie wat ek net hoef te call dan gaan die app self easy wees en die equations gaan op hulle eie uitgesorteer kan word.
 
+    9/13:
+
+    	Johann is 20. Ek het nie meer 'n dom tiener wat my help code nie. Ek het 'n dom 20 jarige.
     */
 
     return app;
 
-}());
+})();
 //# sourceMappingURL=bundle.js.map
