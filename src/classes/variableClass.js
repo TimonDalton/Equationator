@@ -9,7 +9,6 @@ export class Var {
         this.val = val;
         this.implicitlyDefined = implicit;
         this.isKnown = isKnown;
-        console.log("creating var =")
     }
 
     clear() {

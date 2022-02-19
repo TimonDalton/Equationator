@@ -120,15 +120,14 @@ export class System_Of_Equations{
 
    //new stuff
 	getSimilarEquations(n,eqID){
-		console.log("getting similareq!!!!");
-		let testVars = eqs[eqID].varNames.length; //replaced .unknowns
+		let testVars = this.eqs[eqID].varNames; //replaced .unknowns
 		let ret = [];
-		for (let i =0;i<eqs.length;i++){
+		for (let i =0;i<this.eqs.length;i++){
 			if (i != eqID){
-				if(this.eqs[i].unknowns.length <= n){
-					let sharedVarCount = this.eqs[i].unknowns.getUnknownsInList(testVars).length;
+				if(this.eqs[i].varNames.length <= n){//replaced .unknowns
+					let sharedVarCount = this.eqs[i].getAmountSharedVariables(testVars);
 					let entry = {'count': sharedVarCount,'eqID':i};
-					ret.append(entry);
+					ret.push(entry);
 				}
 			}
 		}
@@ -149,7 +148,12 @@ export class System_Of_Equations{
 	
 	trySimEqSolution(eqArr){
 		//insert equations and return answer or err
-		if (eqArr.length ==1)
+		console.log("Attempting Solution With:")
+		for(let i=0;i<eqArr.length;i++){
+			console.log("eqArr4Solve["+i+"] = "+eqArr[i]);
+		}
+		
+		if (eqArr.length ==1){
 			try{
 				var ans = nerdamer.solveEquations(eqArr);
 				
@@ -159,11 +163,18 @@ export class System_Of_Equations{
 			}catch(err){
 				return err;
 			}
+		}
 		else{
 			try{
 				var ans = nerdamer.solveEquations(eqArr);
+				for (let i =0;i<ans.length;i++){
+					this.vars_obj.implicitlySet(this.vars_obj.getVarIndex(ans[i][0]), ans[i][1])	
+				}
+				console.log("!ANSWER HAS BEEN FOUND!")
+				console.log(ans);
 				return ans;
 			}catch(err){
+				console.log(err);
 				return err;
 			}
 		}
@@ -184,29 +195,27 @@ export class System_Of_Equations{
 
 		let unknowns = this.vars_obj.getUnknownVarNames();
 		for (let n = 1;n<=unknowns.length;n++){
-			console.log("fLoop 1: n=" + n + ", unknowns.length=" + unknowns.length);
-			//try equations
+			console.log("S&U_fLoop 1: n=" + n + ", unknowns.length=" + unknowns.length);
 			for(let eqID=0;eqID<this.eqs.length;eqID++){
-				console.log("fLoop 2: eqID=" + eqID + ", eqs.length=" + this.eqs.length);
+				console.log("S&U_fLoop 2: eqID=" + eqID + ", eqs.length=" + this.eqs.length);
 
 				if(this.eqs[eqID].varNames.length <= n){
 					//replaced .unknowns inside if statement
-					console.log("if: n="+n+" eqID="+eqID);
 					
-					let simEqs = getSimilarEquations(n,eqID);//[{count,eqID}]
+					let simEqs = this.getSimilarEquations(n,eqID);//[{count,eqID}]
 					let activeSimEqs = [];
 					activeSimEqs[0] = this.eqs[eqID].eqStr;
-					for(let i=0;i<=simEqs.length;i++){
-						activeSimEqs.append(this.eqs[simEqs[i].eqID].eqStr);
+					for(let i=0;i<simEqs.length;i++){
+						activeSimEqs.push(this.eqs[simEqs[i].eqID].eqStr);
 						//timon approves
 
 						try{
-							ans = trySimEqSolution(activeSimEqs);
+							ans = this.trySimEqSolution(activeSimEqs);
 							n=0;
-							unknowns = this.vars_obj.getUnknownVars();
+							//unknowns = this.vars_obj.getUnknownVars(); dunno about this
 							break;
 						}catch(err){
-
+							console.log("Chief these boys do not allow for a solution");
 						}
 					}
 

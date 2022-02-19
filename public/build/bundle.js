@@ -21861,37 +21861,31 @@ var app = (function () {
             return this.varNames.indexOf(vName);
         }
 
-
-
-    }
-
-    function isNumber(n, scope) {
-        if (!scope) return getVariables(n).length == 0;
-        let vars = getVariables(n);
-        let found = true;
-        console.log("vars");
-        console.log(vars);
-        console.log("scope");
-        console.log(scope);
-        console.log("scope keys");
-        console.log(Object.keys(scope));
-        for (let i =0;i< vars.length;i++) {
-            let v = vars[i];
-            console.log("v: "+v);
-            if (!Object.keys(scope).includes(v)) {
-                console.log(v + " not in");
-                console.log(scope);
-                found = false;
-                break;
-            } else {
-                if (!scope[v]) {
-                    console.log("scope["+v+"]("+scope[v]+")has no value");
-                    found = false;
+        getUnknownVarNames(){
+            console.log("getting UnknownVarNames");
+            let ret = [];
+            let count = 0;
+            
+            for (let i =0;i<this.varNames.length;i++){
+                if(!this.variables[i].isKnown){
+                    console.log("varNames["+i+"]="+this.varNames[i]+", !isKnown");
+                    ret[count++] = this.varNames[i];
                 }
             }
+            return ret;
+        }
+        getUnknownIndexes(){
+            let ret = [];
+            for (let i = 0;i<this.varNames.length;i++){
+                if(!this.vars[i].isKnown){
+                    ret.append(i);
+                }
+            }
+            return ret;
         }
 
-        return found;
+
+
     }
 
     function getVariables(e) {
@@ -21907,6 +21901,7 @@ var app = (function () {
             this.varNames = varNames;
             this.ndPtr = ndPtr;
             this.statusIndex = statusIndex;
+            //this.unknowns = -1; /currently replaced with just varNames.length since they are same
         }
         
         setNewEquationStr(eqStr = this.eqStr){
@@ -21916,6 +21911,27 @@ var app = (function () {
             if(this.isValid){this.statusIndex = 2;}
             else this.statusIndex = getStatusIndexFromString(eqStr);
         }
+        updateUnknowns(unknowns){
+            ret = [];
+            this.unknowns = 0;
+            for (let i =0;i<this.varNames;i++){
+                if (unknowns.includes(this.varNames[i]))
+                    ret.add(this.varNames[i]);
+                    this.unknowns ++;
+            }
+            return ret;
+        }
+        getAmountSharedVariables(list){
+            //this checks if the list contains anything in the Varnames and if it does then 
+            //amountShared counts up to allow us to know how many variables are the same
+            let amountShared=0;
+            for (let i =0;i<this.varNames.length;i++){
+                if (list.includes(this.varNames[i]))
+                    amountShared++;
+            }
+            return amountShared;
+        }
+        
     }
 
     function eqStringValid(inputString){
@@ -22040,30 +22056,123 @@ var app = (function () {
     		}
         }
     	setValBySolving(index,val){
-    		print("this is val in setValbysolving: " + val);
     		this.vars_obj.variables[index].val = val;
     		this.vars_obj.variables[index].isKnown = true;
     		this.vars_obj.variables[index].valueAsExpression = this.vars_obj.variables[index].val;		
     		this.vars_obj.variables[index].valueStr = this.vars_obj.variables[index].val;
-
-    		this.vars_obj.updateScope();
     	}	
 
-        //system
+       //new stuff
+    	getSimilarEquations(n,eqID){
+    		let testVars = this.eqs[eqID].varNames; //replaced .unknowns
+    		let ret = [];
+    		for (let i =0;i<this.eqs.length;i++){
+    			if (i != eqID){
+    				if(this.eqs[i].varNames.length <= n){//replaced .unknowns
+    					let sharedVarCount = this.eqs[i].getAmountSharedVariables(testVars);
+    					let entry = {'count': sharedVarCount,'eqID':i};
+    					ret.push(entry);
+    				}
+    			}
+    		}
+    		for (let i =0;i<ret.length-1;i++){
+    			let swapped = false;
+    			for (let j = i+1;j<ret.length;j++){
+    				if(ret[j-1].count<ret[j].count){
+    					swapped = true;
+    					let temp = ret[j-1];
+    					ret[j-1] = ret[j];
+    					ret[j] = temp;
+    				}
+    			}
+    			if (!swapped)break;			
+    		}
+    		return ret;
+    	}
+    	
+    	trySimEqSolution(eqArr){
+    		//insert equations and return answer or err
+    		console.log("Attempting Solution With:");
+    		for(let i=0;i<eqArr.length;i++){
+    			console.log("eqArr4Solve["+i+"] = "+eqArr[i]);
+    		}
+    		
+    		if (eqArr.length ==1){
+    			try{
+    				var ans = nerdamer_core.solveEquations(eqArr);
+    				
+    				if(Array.isArray(ans)){return ans;}
+    				if(!ans.isNumber()){throw 'ans not number';}
+    				return ans;
+    			}catch(err){
+    				return err;
+    			}
+    		}
+    		else {
+    			try{
+    				var ans = nerdamer_core.solveEquations(eqArr);
+    				for (let i =0;i<ans.length;i++){
+    					this.vars_obj.implicitlySet(this.vars_obj.getVarIndex(ans[i][0]), ans[i][1]);	
+    				}
+    				console.log("!ANSWER HAS BEEN FOUND!");
+    				console.log(ans);
+    				return ans;
+    			}catch(err){
+    				console.log(err);
+    				return err;
+    			}
+    		}
+    	}
 
+    	 //system
         solveAndUpdate(){
-            
+            console.log("Entered solveAndUpdate");
     		if(this.calced){
     			console.log('already solved, make change first');
     			return;
     		}
-    		let indexesToSimultaneouslySolvePerVariable = {};//varname:[EquationsIndexesArr]
     		this.calced = false;
-    		let scope = this.vars_obj.scope;
+    		this.vars_obj.scope;
     		
     		console.log("pressed solve");
+
+    		let unknowns = this.vars_obj.getUnknownVarNames();
+    		for (let n = 1;n<=unknowns.length;n++){
+    			console.log("S&U_fLoop 1: n=" + n + ", unknowns.length=" + unknowns.length);
+    			for(let eqID=0;eqID<this.eqs.length;eqID++){
+    				console.log("S&U_fLoop 2: eqID=" + eqID + ", eqs.length=" + this.eqs.length);
+
+    				if(this.eqs[eqID].varNames.length <= n){
+    					//replaced .unknowns inside if statement
+    					
+    					let simEqs = this.getSimilarEquations(n,eqID);//[{count,eqID}]
+    					let activeSimEqs = [];
+    					activeSimEqs[0] = this.eqs[eqID].eqStr;
+    					for(let i=0;i<simEqs.length;i++){
+    						activeSimEqs.push(this.eqs[simEqs[i].eqID].eqStr);
+    						//timon approves
+
+    						try{
+    							ans = this.trySimEqSolution(activeSimEqs);
+    							n=0;
+    							//unknowns = this.vars_obj.getUnknownVars(); dunno about this
+    							break;
+    						}catch(err){
+    							console.log("Chief these boys do not allow for a solution");
+    						}
+    					}
+
+    				}
+    			}
+    		}
+        }
+    }
+
+
+
+
+    /*
     		for(let i =0;i<this.vars_obj.varNames.length;i++){
-    			console.log("for loop ends @ <"+this.vars_obj.varNames.length);
     			console.log("looking at "+this.vars_obj.varNames[i]+" to solve");
     			console.log("Known status of "+this.vars_obj.varNames[i]+" "+this.vars_obj.variables[i].isKnown);
     			if(!this.vars_obj.variables[i].isKnown){
@@ -22082,41 +22191,39 @@ var app = (function () {
     								try{
     									console.log("in found try");
     									console.log("solving for "+this.vars_obj.varNames[i]+" in "+this.eqs[eqIndex].eqStr +" with the result: ");
-    									value = nerdamer_core.solveEquations(this.eqs[eqIndex].eqStr,this.vars_obj.varNames[i]);
+    									value = nerdamer.solveEquations(this.eqs[eqIndex].eqStr,this.vars_obj.varNames[i]);
     									console.log(value);
-    									if(function(){if(Array.isArray(value)){if(value.length == 1){value = value[0];console.log("jank");return false;}else return true;} else {return false;}}){
+    									if(Array.isArray(value)){
     										console.log("val first index: ");
     										console.log(value[0]);
     										console.log("1");
     										if(isNumber(value[0],scope)){			
     											console.log("1.1");
     											this.eqs[eqIndex].statusIndex = 5;
-    											this.setValBySolving(i,nerdamer_core(value[0]).evaluate(scope));
-    											scope = this.vars_obj.scope;
+    											this.setValBySolving(i,nerdamer(value[0]).evaluate(scope));
     											
     											console.log("Assigning "+this.vars_obj.varNames[i]+" to "+this.vars_obj.variables[i].val);
     											console.log("Scope = ");
     											console.log(scope);
+    											i=0;		
     											console.log("Set "+this.vars_obj.varNames[i]+" to known");
-    											i=-1;console.log("-----------------");		
     											break;
-    										}else {
+    										}else{
     											console.log("1.2");		
     											console.log("The not number:");
     											console.log(value[0]);
     											indexesToSimultaneouslySolvePerVariable[this.vars_obj.varNames[i]] = [eqIndex];
     										}
-    									}else {
+    									}else{
     										console.log("2");
     										if(isNumber(value,scope)){
     											console.log("2.1");
     											this.eqs[eqIndex].statusIndex = 5;
-    											this.setValBySolving(i,nerdamer_core(value[0]).evaluate(scope)); 
-    											scope = this.vars_obj.scope;
+    											this.setValBySolving(i,nerdamer(value[0]).evaluate(scope)); 
     											console.log("Set "+this.vars_obj.varNames[i]+" to known");
-    											i=-1;console.log("-----------------");								
+    											i=0;								
     											break;
-    										}else {
+    										}else{
     											console.log("2.2");
     											indexesToSimultaneouslySolvePerVariable[this.vars_obj.varNames[i]] = [eqIndex];
     										}
@@ -22125,37 +22232,35 @@ var app = (function () {
     									throw e;
     								}
     								//gees se iets is nie lekker nie							
-    							}else {
+    							}else{
     								try{
     									console.log("in !found try");
-    									let value = nerdamer_core.solveEquations(this.eqs[eqIndex].eqStr,this.vars_obj.varNames[i]);
+    									let value = nerdamer.solveEquations(this.eqs[eqIndex].eqStr,this.vars_obj.varNames[i]);
     									if(Array.isArray(value)){
     										console.log("1");
     										if(isNumber(value[0],scope)){		
     											console.log("1.1");			
     											this.eqs[eqIndex].statusIndex = 5;
-    											this.setValBySolving(i,nerdamer_core(value[0]).evaluate(scope));
-    											scope = this.vars_obj.scope;
+    											this.setValBySolving(i,nerdamer(value[0]).evaluate(scope));
+    											i=0;				
     											indexesToSimultaneouslySolvePerVariable[this.vars_obj.varNames[i]] = [];
-    											console.log("Set "+this.vars_obj.varNames[i]+" to known as"+ value[0]);
-    											i=-1;console.log("-----------------");				
+    											console.log("Set "+this.vars_obj.varNames[i]+" to known");
     											break;
-    										}else {		
+    										}else{		
     											console.log("1.2");			
     											indexesToSimultaneouslySolvePerVariable[this.vars_obj.varNames[i]].push(eqIndex);
     										}
-    									}else {
+    									}else{
     										console.log("2");
     										if(isNumber(value,scope)){
     											console.log("2.1");
     											this.eqs[eqIndex].statusIndex = 5;
-    											this.setValBySolving(i,nerdamer_core(value[0]).evaluate(scope));					
-    											scope = this.vars_obj.scope;
+    											this.setValBySolving(i,nerdamer(value[0]).evaluate(scope));					
+    											i=0;		
     											indexesToSimultaneouslySolvePerVariable[this.vars_obj.varNames[i]] = [];	
     											console.log("Set "+this.vars_obj.varNames[i]+" to known");
-    											i=-1;console.log("-----------------");		
     											break;
-    										}else {
+    										}else{
     											console.log("2.2");
     											indexesToSimultaneouslySolvePerVariable[this.vars_obj.varNames[i]] = [eqIndex];
     										}
@@ -22175,8 +22280,8 @@ var app = (function () {
     		let simEqIndexes = indexesToSimultaneouslySolvePerVariable;
     		let eqVars = Object.keys(indexesToSimultaneouslySolvePerVariable);
     		console.log("Eq Vars to simultaneously solve: ");
-    		console.log("equation Vars: "+eqVars);
-    		console.log("simEqIndexes[eqVars[0]]: "+simEqIndexes[eqVars[0]]);
+    		console.log(eqVars);
+    		console.log(simEqIndexes[eqVars[0]]);
     		for(;eqVars.length>0;){
     			let simEqStrings = [];
     			for(let nthIndex = 0;nthIndex<simEqIndexes[eqVars[0]].length;nthIndex++){
@@ -22185,16 +22290,15 @@ var app = (function () {
     			console.log("simEqStrings");
     			console.log(simEqStrings);
     			try{
-    				nerdamer_core.set('SOLUTIONS_AS_OBJECT', true);
-    				let res = nerdamer_core.solveEquations(simEqStrings);
+    				nerdamer.set('SOLUTIONS_AS_OBJECT', true);
+    				let res = nerdamer.solveEquations(simEqStrings);
     				let vNames = Object.keys(res);
     				console.log("res");
     				console.log(res);
     				for(let i =0;i<vNames.length;i++){
     					this.setValBySolving(this.vars_obj.getVarIndex(vNames[i]),res[vNames[i]]);
-    					scope = this.vars_obj.scope;
     				}
-    				nerdamer_core.set('SOLUTIONS_AS_OBJECT', false);
+    				nerdamer.set('SOLUTIONS_AS_OBJECT', false);
     				for(let i = 0;i<eqVars.length;i++){
     					if(vNames.includes(eqVars[i])){
     						eqVars.splice(i,1);
@@ -22210,8 +22314,9 @@ var app = (function () {
     		console.log(indexesToSimultaneouslySolvePerVariable);
 
     		//do simultaneously solve
-        }
-    }
+    		*/
+
+
 
     console.log("loaded systemOfEquationsClass");
 
@@ -22272,14 +22377,14 @@ var app = (function () {
     			t2 = space();
     			input = element("input");
     			t3 = space();
-    			add_location(p, file, 69, 5, 1759);
+    			add_location(p, file, 69, 5, 1828);
     			attr_dev(i, "class", "fa fa-trash-o");
     			set_style(i, "font-size", "24px");
-    			add_location(i, file, 70, 5, 1786);
+    			add_location(i, file, 70, 5, 1856);
     			attr_dev(input, "type", "text");
-    			add_location(input, file, 77, 5, 1936);
+    			add_location(input, file, 77, 5, 2013);
     			attr_dev(div, "id", "varContainer");
-    			add_location(div, file, 68, 4, 1730);
+    			add_location(div, file, 68, 4, 1798);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -22360,10 +22465,10 @@ var app = (function () {
     			attr_dev(i, "class", "fa fa-trash-o");
     			set_style(i, "font-size", "24px");
     			set_style(i, "color", "black");
-    			add_location(i, file, 89, 5, 2172);
+    			add_location(i, file, 89, 5, 2261);
     			attr_dev(input, "type", "text");
-    			add_location(input, file, 96, 5, 2337);
-    			add_location(div, file, 88, 4, 2161);
+    			add_location(input, file, 96, 5, 2433);
+    			add_location(div, file, 88, 4, 2249);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, div, anchor);
@@ -22483,24 +22588,24 @@ var app = (function () {
 
     			if (!src_url_equal(script0.src, script0_src_value = "https://kit.fontawesome.com/509944f454.js")) attr_dev(script0, "src", script0_src_value);
     			attr_dev(script0, "crossorigin", "anonymous");
-    			add_location(script0, file, 54, 1, 1262);
+    			add_location(script0, file, 54, 1, 1316);
     			if (!src_url_equal(script1.src, script1_src_value = "nerdamer.core.js")) attr_dev(script1, "src", script1_src_value);
-    			add_location(script1, file, 57, 1, 1357);
+    			add_location(script1, file, 57, 1, 1414);
     			if (!src_url_equal(script2.src, script2_src_value = "all.min.js")) attr_dev(script2, "src", script2_src_value);
-    			add_location(script2, file, 58, 1, 1399);
-    			add_location(head, file, 53, 0, 1254);
+    			add_location(script2, file, 58, 1, 1457);
+    			add_location(head, file, 53, 0, 1307);
     			attr_dev(h1, "class", "heading svelte-rcikon");
-    			add_location(h1, file, 62, 1, 1451);
-    			add_location(button0, file, 63, 1, 1490);
-    			add_location(button1, file, 64, 1, 1559);
+    			add_location(h1, file, 62, 1, 1513);
+    			add_location(button0, file, 63, 1, 1553);
+    			add_location(button1, file, 64, 1, 1623);
     			attr_dev(div0, "id", "variablesDiv");
-    			add_location(div0, file, 66, 2, 1643);
+    			add_location(div0, file, 66, 2, 1709);
     			attr_dev(div1, "class", "equationsDiv svelte-rcikon");
-    			add_location(div1, file, 86, 2, 2096);
+    			add_location(div1, file, 86, 2, 2182);
     			attr_dev(div2, "class", "layout-div svelte-rcikon");
-    			add_location(div2, file, 65, 1, 1616);
+    			add_location(div2, file, 65, 1, 1681);
     			attr_dev(main, "class", "svelte-rcikon");
-    			add_location(main, file, 61, 0, 1443);
+    			add_location(main, file, 61, 0, 1504);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");

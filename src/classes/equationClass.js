@@ -15,7 +15,6 @@ export class Equation{
     }
     
     setNewEquationStr(eqStr = this.eqStr){
-        console.log("newEq being set")
         this.eqStr = eqStr;
         this.isValid = eqStringValid(this.eqStr);
         this.varNames = getVariables(this.eqStr);
@@ -32,13 +31,15 @@ export class Equation{
         }
         return ret;
     }
-    getUnknownsInList(list){
-        ret = []
-        for (let i =0;i<this.varNames;i++){
+    getAmountSharedVariables(list){
+        //this checks if the list contains anything in the Varnames and if it does then 
+        //amountShared counts up to allow us to know how many variables are the same
+        let amountShared=0;
+        for (let i =0;i<this.varNames.length;i++){
             if (list.includes(this.varNames[i]))
-                ret.add(this.varNames[i]);
+                amountShared++;
         }
-        return ret;
+        return amountShared;
     }
     
 }
