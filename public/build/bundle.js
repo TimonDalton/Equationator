@@ -1,5 +1,5 @@
 
-(function(l, r) { if (!l || l.getElementById('livereloadscript')) return; r = l.createElement('script'); r.async = 1; r.src = '//' + (self.location.host || 'localhost').split(':')[0] + ':35729/livereload.js?snipver=1'; r.id = 'livereloadscript'; l.getElementsByTagName('head')[0].appendChild(r) })(self.document);
+(function(l, r) { if (!l || l.getElementById('livereloadscript')) return; r = l.createElement('script'); r.async = 1; r.src = '//' + (self.location.host || 'localhost').split(':')[0] + ':35730/livereload.js?snipver=1'; r.id = 'livereloadscript'; l.getElementsByTagName('head')[0].appendChild(r) })(self.document);
 var app = (function () {
     'use strict';
 
@@ -21947,6 +21947,10 @@ var app = (function () {
 
     }
 
+    function getScopedEquation(scope,equationStr){       
+        return nerdamer_core(equationStr).evaluate(scope).toString();
+    }
+
     /*
     var:
         this.name = name;
@@ -22098,24 +22102,37 @@ var app = (function () {
     		}
     		
     		if (eqArr.length ==1){
+    			console.log("code D");
     			try{
-    				var ans = nerdamer_core.solveEquations(eqArr);
-    				
-    				if(Array.isArray(ans)){return ans;}
+    				console.log("code F");
+    				console.log;
+    				let ans = nerdamer_core.solveEquations(eqArr);
+    				console.log("!ANSWER HAS BEEN FOUND!");
+    				console.log(ans);
+
+    				console.log("code G");
+    				console.log("code H");
+
+    				if(Array.isArray(ans)){return ans[0];}
     				if(!ans.isNumber()){throw 'ans not number';}
+    				this.setValBySolving(this.vars_obj.getVarIndex(ans[0][0]), ans[0][1]);	
     				return ans;
     			}catch(err){
+    				console.log(err);
     				return err;
     			}
     		}
     		else {
     			try{
-    				var ans = nerdamer_core.solveEquations(eqArr);
-    				for (let i =0;i<ans.length;i++){
-    					this.vars_obj.implicitlySet(this.vars_obj.getVarIndex(ans[i][0]), ans[i][1]);	
-    				}
+
+
+
+    				let ans = nerdamer_core.solveEquations(eqArr);
     				console.log("!ANSWER HAS BEEN FOUND!");
     				console.log(ans);
+    				for (let i =0;i<ans.length;i++){
+    					this.setValBySolving(this.vars_obj.getVarIndex(ans[i][0]), ans[i][1]);	
+    				}
     				return ans;
     			}catch(err){
     				console.log(err);
@@ -22126,14 +22143,14 @@ var app = (function () {
 
     	 //system
         solveAndUpdate(){
+
             console.log("Entered solveAndUpdate");
     		if(this.calced){
     			console.log('already solved, make change first');
     			return;
     		}
+    		this.clearNonImplicit();
     		this.calced = false;
-    		this.vars_obj.scope;
-    		
     		console.log("pressed solve");
 
     		let unknowns = this.vars_obj.getUnknownVarNames();
@@ -22143,24 +22160,47 @@ var app = (function () {
     				console.log("S&U_fLoop 2: eqID=" + eqID + ", eqs.length=" + this.eqs.length);
 
     				if(this.eqs[eqID].varNames.length <= n){
-    					//replaced .unknowns inside if statement
-    					
     					let simEqs = this.getSimilarEquations(n,eqID);//[{count,eqID}]
     					let activeSimEqs = [];
-    					activeSimEqs[0] = this.eqs[eqID].eqStr;
-    					for(let i=0;i<simEqs.length;i++){
-    						activeSimEqs.push(this.eqs[simEqs[i].eqID].eqStr);
-    						//timon approves
-
+    					activeSimEqs[0] =getScopedEquation(
+    						this.vars_obj.scope,
+    						this.eqs[eqID].eqStr
+    						);
+    					
+    					
+    					if(simEqs.length==0){
+    						//only 1 eq
     						try{
     							ans = this.trySimEqSolution(activeSimEqs);
     							n=0;
-    							//unknowns = this.vars_obj.getUnknownVars(); dunno about this
     							break;
     						}catch(err){
-    							console.log("Chief these boys do not allow for a solution");
+    							console.log("Chief this boy does not allow for a solution");
+    							console.log(err);
+    						}	
+    					}else {
+    						//>1 eq
+    						for(let i=0;i<simEqs.length;i++){
+    					
+    							activeSimEqs.push(
+    								getScopedEquation(
+    									this.vars_obj.scope,
+    									this.eqs[simEqs[i].eqID].eqStr
+    								)
+    							);
+
+
+    							try{
+    								ans = this.trySimEqSolution(activeSimEqs);
+    								n=0;
+    								break;
+    							}catch(err){
+    								console.log("Chief these boys do not allow for a solution");
+    								console.log(err);
+    							}	
     						}
     					}
+    					
 
     				}
     			}

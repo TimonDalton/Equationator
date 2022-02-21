@@ -56,3 +56,7 @@ export function getStatusIndexFromString(str){
     return 2;
 
 }
+
+export function getScopedEquation(scope,equationStr){       
+    return nerdamer(equationStr).evaluate(scope).toString();
+}

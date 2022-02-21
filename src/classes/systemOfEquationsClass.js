@@ -2,7 +2,7 @@
 import nerdamer from'nerdamer/nerdamer.core.js';
 import 'nerdamer/Solve.js';
 import { Var_obj,getVariables,isNumber } from "./variableClass.js";
-import { Equation } from "./equationClass.js";
+import { Equation,getScopedEquation } from "./equationClass.js";
 /*
 var:
     this.name = name;
@@ -154,24 +154,37 @@ export class System_Of_Equations{
 		}
 		
 		if (eqArr.length ==1){
+			console.log("code D");
 			try{
-				var ans = nerdamer.solveEquations(eqArr);
-				
-				if(Array.isArray(ans)){return ans;}
+				console.log("code F");
+				console.log
+				let ans = nerdamer.solveEquations(eqArr);
+				console.log("!ANSWER HAS BEEN FOUND!")
+				console.log(ans);
+
+				console.log("code G");
+				console.log("code H");
+
+				if(Array.isArray(ans)){return ans[0];}
 				if(!ans.isNumber()){throw 'ans not number';}
+				this.setValBySolving(this.vars_obj.getVarIndex(ans[0][0]), ans[0][1])	
 				return ans;
 			}catch(err){
+				console.log(err)
 				return err;
 			}
 		}
 		else{
 			try{
-				var ans = nerdamer.solveEquations(eqArr);
-				for (let i =0;i<ans.length;i++){
-					this.vars_obj.implicitlySet(this.vars_obj.getVarIndex(ans[i][0]), ans[i][1])	
-				}
+
+
+
+				let ans = nerdamer.solveEquations(eqArr);
 				console.log("!ANSWER HAS BEEN FOUND!")
 				console.log(ans);
+				for (let i =0;i<ans.length;i++){
+					this.setValBySolving(this.vars_obj.getVarIndex(ans[i][0]), ans[i][1])	
+				}
 				return ans;
 			}catch(err){
 				console.log(err);
@@ -182,15 +195,14 @@ export class System_Of_Equations{
 
 	 //system
     solveAndUpdate(){
+
         console.log("Entered solveAndUpdate");
 		if(this.calced){
 			console.log('already solved, make change first');
 			return;
 		}
-		let indexesToSimultaneouslySolvePerVariable = {};//varname:[EquationsIndexesArr]
+		this.clearNonImplicit();
 		this.calced = false;
-		let scope = this.vars_obj.scope;
-		
 		console.log("pressed solve");
 
 		let unknowns = this.vars_obj.getUnknownVarNames();
@@ -200,24 +212,47 @@ export class System_Of_Equations{
 				console.log("S&U_fLoop 2: eqID=" + eqID + ", eqs.length=" + this.eqs.length);
 
 				if(this.eqs[eqID].varNames.length <= n){
-					//replaced .unknowns inside if statement
-					
 					let simEqs = this.getSimilarEquations(n,eqID);//[{count,eqID}]
 					let activeSimEqs = [];
-					activeSimEqs[0] = this.eqs[eqID].eqStr;
-					for(let i=0;i<simEqs.length;i++){
-						activeSimEqs.push(this.eqs[simEqs[i].eqID].eqStr);
-						//timon approves
-
+					activeSimEqs[0] =getScopedEquation(
+						this.vars_obj.scope,
+						this.eqs[eqID].eqStr
+						);
+					
+					
+					if(simEqs.length==0){
+						//only 1 eq
 						try{
 							ans = this.trySimEqSolution(activeSimEqs);
 							n=0;
-							//unknowns = this.vars_obj.getUnknownVars(); dunno about this
 							break;
 						}catch(err){
-							console.log("Chief these boys do not allow for a solution");
+							console.log("Chief this boy does not allow for a solution");
+							console.log(err);
+						}	
+					}else{
+						//>1 eq
+						for(let i=0;i<simEqs.length;i++){
+					
+							activeSimEqs.push(
+								getScopedEquation(
+									this.vars_obj.scope,
+									this.eqs[simEqs[i].eqID].eqStr
+								)
+							);
+
+
+							try{
+								ans = this.trySimEqSolution(activeSimEqs);
+								n=0;
+								break;
+							}catch(err){
+								console.log("Chief these boys do not allow for a solution");
+								console.log(err);
+							}	
 						}
 					}
+					
 
 				}
 			}
